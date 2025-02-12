@@ -134,7 +134,7 @@ def main():
             check_response(response)
             homework = response['homeworks']
             if not homework:
-                logger.debug('Список с домашками пуст.')
+                logger.debug('Список с домашними заданиями пуст.')
                 continue
             message = parse_status(homework[HOMEWORK_NUMBER])
             if message not in sended_message:
