@@ -1,14 +1,14 @@
-import sys
-import os
-import requests
-import time
 import logging
+import os
+import sys
+import time
 from http import HTTPStatus
 
-from telebot import TeleBot
-from telebot.apihelper import ApiException
-from telebot.apihelper import ApiTelegramException
 from dotenv import load_dotenv
+import requests
+from telebot import TeleBot
+
+from telebot.apihelper import ApiException
 from exceptions import ApiHomeworkError
 
 
@@ -25,7 +25,7 @@ RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 HOMEWORK_NUMBER = 0
-
+MISSING_VARIABLE = 'Отсутствуют обязательные переменные окружения: '
 
 HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
@@ -46,14 +46,13 @@ def check_tokens():
     ]
     if missing_tokens:
         logger.critical(
-            'Отсутствуют обязательные переменные окружения: '
+            MISSING_VARIABLE,
             f'{", ".join(missing_tokens)}.'
         )
         raise EnvironmentError(
-            'Отсутствуют обязательные переменные окружения: '
+            MISSING_VARIABLE,
             f'{", ".join(missing_tokens)}.'
         )
-    return True
 
 
 def send_message(bot, message):
@@ -69,6 +68,7 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Получаем данные по API."""
+    logger.info('Попытка получения данных по API')
     try:
         response = requests.get(
             url=ENDPOINT, headers=HEADERS, params={'from_date': timestamp}
@@ -92,9 +92,9 @@ def get_api_answer(timestamp):
 
 def check_response(response):
     """Проверяет данные из словаря API."""
-    keys = {'homeworks', 'current_date'}
+    keys = {'homeworks'}
     if not isinstance(response, dict):
-        raise TypeError('Ожидался словарь с данными API.')
+        raise TypeError(f'Получен {type(response)} вместо ожидаемого словаря.')
     for key in keys:
         if key not in response:
             raise KeyError(
@@ -103,8 +103,6 @@ def check_response(response):
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise TypeError('Значение под ключом `homeworks` должно быть списком!')
-    if not homeworks:
-        raise ValueError('Список домашек пуст.')
 
     return homeworks
 
@@ -131,39 +129,27 @@ def main():
     while True:
         try:
             response = get_api_answer(timestamp)
-            check_response(response)
-            homework = response['homeworks']
-            if not homework:
+            homeworks = check_response(response)
+            if not homeworks:
                 logger.debug('Список с домашними заданиями пуст.')
                 continue
-            message = parse_status(homework[HOMEWORK_NUMBER])
-            if message not in sended_message:
-                send_message(bot, message)
+            message = parse_status(homeworks[HOMEWORK_NUMBER])
+            if send_message(bot, message) is not True:
                 sended_message = message
+                timestamp = response.get('current_date', int(time.time()))
             else:
+                timestamp = response.get(int(time.time()))
                 logger.info(
                     'Отмена отправки сообщения, данное сообщение '
                     'уже было отправлено: \n'
                     f'"{message}"'
                 )
-            timestamp = response.get('current_date', int(time.time()))
-        except ApiTelegramException:
-            logger.error(
-                'Ошибка при отправке сообщения пользователю. (main)',
-                exc_info=True
-            )
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message, exc_info=True)
-            if message not in sended_message:
-                try:
-                    send_message(bot, message)
-                    sended_message = message
-                except ApiTelegramException:
-                    logger.error(
-                        'Ошибка при отправке сообщения пользователю. (main)',
-                        exc_info=True
-                    )
+            if message != sended_message:
+                send_message(bot, message)
+                sended_message = message
         finally:
             logger.info(
                 f'Ожидание следующего запроса -- {RETRY_PERIOD} секунд.'
