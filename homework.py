@@ -7,8 +7,8 @@ from http import HTTPStatus
 from dotenv import load_dotenv
 import requests
 from telebot import TeleBot
-
 from telebot.apihelper import ApiException
+
 from exceptions import ApiHomeworkError
 
 
@@ -46,12 +46,10 @@ def check_tokens():
     ]
     if missing_tokens:
         logger.critical(
-            MISSING_VARIABLE,
-            f'{", ".join(missing_tokens)}.'
+            f'{MISSING_VARIABLE}{", ".join(missing_tokens)}.'
         )
         raise EnvironmentError(
-            MISSING_VARIABLE,
-            f'{", ".join(missing_tokens)}.'
+            f'{MISSING_VARIABLE}{", ".join(missing_tokens)}.'
         )
 
 
@@ -60,10 +58,13 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logger.debug(f'Сообщение отправлено успешно: {message}.')
+        return True
     except ApiException as e:
         logger.error(f'Возникла ошибка API Telebot: {e}')
+        return False
     except requests.exceptions.RequestException as e:
         logger.error(f'Ошибка запроса: {e}')
+        return False
 
 
 def get_api_answer(timestamp):
@@ -92,17 +93,16 @@ def get_api_answer(timestamp):
 
 def check_response(response):
     """Проверяет данные из словаря API."""
-    keys = {'homeworks'}
+    key = 'homeworks'
     if not isinstance(response, dict):
         raise TypeError(f'Получен {type(response)} вместо ожидаемого словаря.')
-    for key in keys:
-        if key not in response:
-            raise KeyError(
-                f'Обязательный ключ `{key}` отсутсвует в словаре API.'
-            )
+    if key not in response:
+        raise KeyError(
+            f'Обязательный ключ `{key}` отсутсвует в словаре API.'
+        )
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
-        raise TypeError('Значение под ключом `homeworks` должно быть списком!')
+        raise TypeError(f'Получен {type(homeworks)} вместо ожидаемого списка.')
 
     return homeworks
 
@@ -134,16 +134,17 @@ def main():
                 logger.debug('Список с домашними заданиями пуст.')
                 continue
             message = parse_status(homeworks[HOMEWORK_NUMBER])
-            if send_message(bot, message) is not True:
+            previous_timestamp = timestamp
+            if not send_message(bot, message):
                 sended_message = message
-                timestamp = response.get('current_date', int(time.time()))
-            else:
-                timestamp = response.get(int(time.time()))
+                timestamp = previous_timestamp
                 logger.info(
                     'Отмена отправки сообщения, данное сообщение '
                     'уже было отправлено: \n'
                     f'"{message}"'
                 )
+            else:
+                timestamp = response.get('current_date', int(time.time()))
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message, exc_info=True)
