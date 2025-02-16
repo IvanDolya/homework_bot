@@ -4,8 +4,8 @@ import sys
 import time
 from http import HTTPStatus
 
-from dotenv import load_dotenv
 import requests
+from dotenv import load_dotenv
 from telebot import TeleBot
 from telebot.apihelper import ApiException
 
@@ -134,17 +134,11 @@ def main():
                 logger.debug('Список с домашними заданиями пуст.')
                 continue
             message = parse_status(homeworks[HOMEWORK_NUMBER])
-            previous_timestamp = timestamp
-            if not send_message(bot, message):
+            if send_message(bot, message):
                 sended_message = message
-                timestamp = previous_timestamp
-                logger.info(
-                    'Отмена отправки сообщения, данное сообщение '
-                    'уже было отправлено: \n'
-                    f'"{message}"'
-                )
-            else:
                 timestamp = response.get('current_date', int(time.time()))
+            else:
+                timestamp = response.get('current_date', timestamp)
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message, exc_info=True)
